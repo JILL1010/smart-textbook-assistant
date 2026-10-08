@@ -36,7 +36,7 @@ Name Python tests `test_*.py`; use temporary storage and mock external services.
 
 ## Commit & Pull Request Guidelines
 
-This checkout has no Git metadata, so historical conventions are unavailable. Recommended messages: `feat: add chapter export` or `fix: restore subtitles`. Keep commits focused. PRs should describe behavior changes, link applicable issues, report checks and known failures, and include screenshots for UI changes.
+Use short, prefixed commit messages; existing history uses `feat:` and `docs:`. Use `fix:` for corrections, such as `fix: restore subtitles`. Keep commits focused. PRs should describe behavior changes, link applicable issues, report checks and known failures, and include screenshots for UI changes. See `CONTRIBUTING.md` for the contribution workflow.
 
 ## Security & Configuration
 

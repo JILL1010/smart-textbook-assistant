@@ -103,7 +103,26 @@ const base = process.env.SMOKE_WEB_URL || "http://127.0.0.1:18080";
     assert(await page.getByRole("button", { name: "生成语音讲解", exact: true }).isVisible());
     console.log("PASS style selection, regeneration and persistent invalidation");
 
-    await page.getByRole("link", { name: "智能课本助手", exact: false }).first().click();
+    await page.getByLabel("题目数量").selectOption("10");
+    await page.getByRole("button", { name: "生成练习题", exact: true }).click();
+    await page.getByText("已处理完整讲解 · 本次 10 题覆盖 2/2 个讲解片段", { exact: true }).waitFor();
+    await page.getByText("来源：讲解片段 2/2", { exact: true }).first().waitFor();
+    assert(await page.getByText(/末尾知识练习/).first().isVisible());
+    await page.getByRole("button", { name: "生成知识图谱", exact: true }).click();
+    await page.getByText(/已处理完整讲解 · 2 个片段 · \d+ 字符 · 3 个概念/).waitFor();
+    await page.reload();
+    await page.getByText("已处理完整讲解 · 本次 10 题覆盖 2/2 个讲解片段", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("题目数量").inputValue(), "10");
+    await page.getByText(/已处理完整讲解 · 2 个片段 · \d+ 字符 · 3 个概念/).waitFor();
+    const radios = page.locator('input[type="radio"][name^="quiz-q-"]');
+    for (let index = 0; index < 10; index++) await radios.nth(index * 4 + 1).check();
+    await page.getByRole("button", { name: "提交 (10/10)", exact: true }).click();
+    await page.getByText("得分: 0 / 10", { exact: true }).waitFor();
+    await page.getByRole("link", { name: /打开课本错题本/ }).click();
+    await page.getByText("出题时来源：讲解片段 2/2", { exact: true }).first().waitFor();
+    console.log("PASS full-lecture quiz and graph generation, coverage restoration and review snapshots");
+
+    await page.goto(base);
     await page.locator('input[type="file"]').setInputFiles({ name: "oversized.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(1024 * 1024 + 1) });
     await page.getByText("文件大小不能超过 1 MB", { exact: true }).waitFor();
     console.log("PASS upload limit error through runtime proxy");

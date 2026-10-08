@@ -1,7 +1,8 @@
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from db import get_db
@@ -14,9 +15,9 @@ router = APIRouter()
 
 
 class QuizRequest(BaseModel):
-    num_questions: int = 5
-    difficulty: str = "medium"
-    style: str = "teacher"
+    num_questions: int = Field(default=5, ge=1, le=20)
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
+    style: Literal["teacher", "concise", "story"] = "teacher"
 
 
 @router.post("/textbooks/{textbook_id}/chapters/{chapter_id}/quiz")

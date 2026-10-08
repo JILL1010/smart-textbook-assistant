@@ -187,7 +187,37 @@ def generate_quiz(
     difficulty: str = "medium",
     num_questions: int = 5,
 ) -> list[dict]:
-    """Generate multiple-choice quiz questions based on chapter content."""
+    """Process the full lecture and distribute the requested quiz across it."""
+    if type(num_questions) is not int or not 1 <= num_questions <= 20:
+        raise RuntimeError("练习题数量必须为 1 到 20")
+    parts = _artifact_parts(chapter_text)
+    questions = []
+    for index, part in enumerate(parts):
+        count = max(1, num_questions // len(parts) + (index < num_questions % len(parts)))
+        title = f"{chapter_title}（讲解片段 {index + 1}/{len(parts)}）"
+        batch = _generate_quiz_part(title, part, difficulty, count)
+        if len(batch) != count:
+            raise RuntimeError("模型返回的题目数量与要求不符，本次练习未保存，请重试")
+        questions.extend({**question, "source_part": index + 1, "source_parts_total": len(parts)} for question in batch)
+    if len(questions) > num_questions:
+        # All parts were processed. A short quiz samples evenly, including the end.
+        positions = [len(questions) // 2] if num_questions == 1 else [
+            round(index * (len(questions) - 1) / (num_questions - 1)) for index in range(num_questions)
+        ]
+        questions = [questions[position] for position in positions]
+    return questions
+
+
+def _artifact_parts(text: str) -> list[str]:
+    if not text.strip():
+        raise RuntimeError("讲解内容为空，无法生成练习或图谱")
+    parts = chapter_segments(text)
+    if len(parts) > 40:
+        raise RuntimeError("讲解超过 40 个片段，请先按小节导入；本次未生成或覆盖内容")
+    return parts
+
+
+def _generate_quiz_part(chapter_title: str, chapter_text: str, difficulty: str, num_questions: int) -> list[dict]:
     client = get_client()
     if client is None:
         raise RuntimeError("未配置 LLM API Key，无法生成练习题")
@@ -204,7 +234,7 @@ def generate_quiz(
 {difficulty_hint}
 
 章节内容：
-{chapter_text[:8000]}
+{chapter_text}
 
 请严格按照 JSON 数组格式输出 {num_questions} 道题目。"""
 
@@ -218,6 +248,8 @@ def generate_quiz(
             temperature=0.3,
             max_tokens=4096,
         )
+        if getattr(response.choices[0], "finish_reason", None) == "length":
+            raise RuntimeError("模型题目输出达到长度上限，本次练习未保存")
         raw = response.choices[0].message.content or ""
     except Exception as e:
         raise RuntimeError(f"LLM 调用失败: {e}") from e
@@ -265,7 +297,7 @@ def _validate_quiz(quiz: list) -> list[dict]:
             continue
         question = q.get("question", "")
         options = q.get("options", [])
-        answer = q.get("answer", 0)
+        answer = q.get("answer")
         explanation = q.get("explanation", "")
 
         if not isinstance(question, str) or not question.strip() or not isinstance(options, list) or len(options) != 4 or any(not isinstance(option, str) or not option.strip() for option in options):
@@ -304,7 +336,33 @@ def generate_knowledge_graph(
     chapter_title: str,
     chapter_text: str,
 ) -> dict:
-    """Extract concepts and relationships from chapter content as a graph."""
+    """Extract every lecture part and merge identical concept labels/categories."""
+    parts = _artifact_parts(chapter_text)
+    nodes, edges, concepts, seen_edges = [], [], {}, set()
+    for index, part in enumerate(parts, 1):
+        graph = _generate_graph_part(f"{chapter_title}（讲解片段 {index}/{len(parts)}）", part)
+        mapping = {}
+        for node in graph["nodes"]:
+            key = (" ".join(node["label"].split()), node["category"])
+            if key not in concepts:
+                merged = {**node, "id": f"concept-{len(nodes) + 1}", "source_parts": [index]}
+                concepts[key] = merged
+                nodes.append(merged)
+            else:
+                merged = concepts[key]
+                if index not in merged["source_parts"]:
+                    merged["source_parts"].append(index)
+            mapping[node["id"]] = merged["id"]
+        for edge in graph["edges"]:
+            source, target = mapping[edge["source"]], mapping[edge["target"]]
+            key = (source, target, edge["relation"])
+            if source != target and key not in seen_edges:
+                edges.append({**edge, "source": source, "target": target})
+                seen_edges.add(key)
+    return {"nodes": nodes, "edges": edges, "coverage": {"source_characters": len(chapter_text), "parts": len(parts)}}
+
+
+def _generate_graph_part(chapter_title: str, chapter_text: str) -> dict:
     client = get_client()
     if client is None:
         raise RuntimeError("未配置 LLM API Key，无法生成知识图谱")
@@ -314,7 +372,7 @@ def generate_knowledge_graph(
 章节标题：{chapter_title}
 
 章节内容：
-{chapter_text[:8000]}
+{chapter_text}
 
 请严格按照 JSON 格式输出，仅输出 JSON 对象。"""
 
@@ -328,6 +386,8 @@ def generate_knowledge_graph(
             temperature=0.3,
             max_tokens=4096,
         )
+        if getattr(response.choices[0], "finish_reason", None) == "length":
+            raise RuntimeError("模型图谱输出达到长度上限，本次图谱未保存")
         raw = response.choices[0].message.content or ""
     except Exception as e:
         raise RuntimeError(f"LLM 调用失败: {e}") from e
@@ -384,11 +444,11 @@ def _validate_graph(graph: dict) -> dict:
         nid = n.get("id", "")
         label = n.get("label", "")
         category = n.get("category", "")
-        if not nid or not label:
+        if not isinstance(nid, str) or not nid.strip() or not isinstance(label, str) or not label.strip():
             continue
         if nid in seen_ids:
             continue
-        if category not in VALID_CATEGORIES:
+        if not isinstance(category, str) or category not in VALID_CATEGORIES:
             category = "definition"
         seen_ids.add(nid)
         valid_nodes.append({"id": nid, "label": label, "category": category})
@@ -405,11 +465,11 @@ def _validate_graph(graph: dict) -> dict:
         src = e.get("source", "")
         tgt = e.get("target", "")
         rel = e.get("relation", "")
-        if not src or not tgt:
+        if not isinstance(src, str) or not isinstance(tgt, str) or not src or not tgt:
             continue
         if src not in seen_ids or tgt not in seen_ids:
             continue
-        if rel not in VALID_RELATIONS:
+        if not isinstance(rel, str) or rel not in VALID_RELATIONS:
             rel = "related"
         key = (src, tgt, rel)
         if key in seen_edges:

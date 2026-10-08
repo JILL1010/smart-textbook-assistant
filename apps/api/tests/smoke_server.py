@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory() as folder:
     from main import app
     from models.textbook import Textbook
     from models.chapter import Chapter
-    from routers import tts, quiz, knowledge_graph
+    from routers import tts
     from services import generator
     import fitz
 
@@ -59,7 +59,15 @@ with tempfile.TemporaryDirectory() as folder:
 
     def explain(title, text, difficulty, style):
         tail = "\n\n整章末尾知识" if "整章末尾知识" in text else ""
-        return f"## 新讲解\n\n风格：{style}；难度：{difficulty}{tail}"
+        return f"## 新讲解\n\n风格：{style}；难度：{difficulty}\n\n" + "示例内容。" * 900 + tail
+
+    def quiz_part(title, text, difficulty, count):
+        label = "末尾知识练习" if "整章末尾知识" in text else "前段知识练习"
+        return [{**questions[0], "question": f"{label} {index + 1}"} for index in range(count)]
+
+    def graph_part(title, text):
+        label = "末尾方法" if "整章末尾知识" in text else "前段方法"
+        return {"nodes": [{**graph["nodes"][0]}, {**graph["nodes"][1], "label": label}], "edges": [dict(graph["edges"][0])]}
 
     async def audio(content, output):
         Path(output).write_bytes(b"mock-audio")
@@ -68,6 +76,6 @@ with tempfile.TemporaryDirectory() as folder:
 
     generator._generate_chapter_part = explain
     tts.generate_audio = audio
-    quiz.generate_quiz = lambda **kwargs: questions
-    knowledge_graph.generate_knowledge_graph = lambda **kwargs: graph
+    generator._generate_quiz_part = quiz_part
+    generator._generate_graph_part = graph_part
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

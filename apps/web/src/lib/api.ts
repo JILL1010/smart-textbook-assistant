@@ -168,6 +168,8 @@ export interface QuizQuestion {
   options: string[];
   answer: number;
   explanation: string;
+  source_part?: number;
+  source_parts_total?: number;
 }
 
 export interface QuizResult {
@@ -253,6 +255,7 @@ export interface KnowledgeGraphNode {
   id: string;
   label: string;
   category: "definition" | "theorem" | "method" | "application";
+  source_parts?: number[];
 }
 
 export interface KnowledgeGraphEdge {
@@ -261,12 +264,15 @@ export interface KnowledgeGraphEdge {
   relation: "prerequisite" | "generalization" | "application" | "related";
 }
 
+export interface KnowledgeGraphData {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  coverage?: { source_characters: number; parts: number };
+}
+
 export interface KnowledgeGraphResult {
   status: string;
-  data: {
-    nodes: KnowledgeGraphNode[];
-    edges: KnowledgeGraphEdge[];
-  };
+  data: KnowledgeGraphData;
 }
 
 export async function generateKnowledgeGraph(

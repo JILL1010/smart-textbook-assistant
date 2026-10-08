@@ -9,7 +9,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import StudyPanel from "@/components/StudyPanel";
-import { API_BASE, getChapter, getTextbook, getSubtitles, getLearning, saveQuizDraft, submitQuiz, generateContent, generateTTS, askQuestion, generateQuiz, generateKnowledgeGraph, type GenerationMetadata, type Citation, type ChatMessage, type Subtitle, type QuizQuestion, type KnowledgeGraphNode, type KnowledgeGraphEdge } from "@/lib/api";
+import { API_BASE, getChapter, getTextbook, getSubtitles, getLearning, saveQuizDraft, submitQuiz, generateContent, generateTTS, askQuestion, generateQuiz, generateKnowledgeGraph, type GenerationMetadata, type Citation, type ChatMessage, type Subtitle, type QuizQuestion, type KnowledgeGraphNode, type KnowledgeGraphData } from "@/lib/api";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
@@ -120,6 +120,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
 
   // Quiz state
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [quizCount, setQuizCount] = useState(5);
   const [quizGenerating, setQuizGenerating] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
@@ -132,7 +133,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
   const draftSequence = useRef(0);
 
   // Knowledge graph state
-  const [graphData, setGraphData] = useState<{ nodes: KnowledgeGraphNode[]; edges: KnowledgeGraphEdge[] } | null>(null);
+  const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null);
   const [graphGenerating, setGraphGenerating] = useState(false);
   const [selectedNode, setSelectedNode] = useState<KnowledgeGraphNode | null>(null);
   const [isDark, setIsDark] = useState(false);
@@ -189,7 +190,11 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
         setLearningLoaded(true);
         // Restore quiz from DB if present
         if (ch.quiz_data) {
-          try { setQuizQuestions(JSON.parse(ch.quiz_data)); } catch { /* ignore */ }
+          try {
+            const questions: QuizQuestion[] = JSON.parse(ch.quiz_data);
+            setQuizQuestions(questions);
+            if ([5, 10, 20].includes(questions.length)) setQuizCount(questions.length);
+          } catch { /* ignore */ }
         }
         // Restore knowledge graph from DB if present
         if (ch.knowledge_graph_data) {
@@ -328,7 +333,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
     setQuizGenerating(true);
     setError(null);
     try {
-      const result = await generateQuiz(textbookId, cid, 5, difficulty, style);
+      const result = await generateQuiz(textbookId, cid, quizCount, difficulty, style);
       setQuizQuestions(result.quiz);
       setQuizToken(result.quiz_token);
       setUserAnswers({});
@@ -702,13 +707,21 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
       {/* Quiz section */}
       {hasGenerated && (
         <div className="mt-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-          <h2 className="font-semibold mb-4">练习题</h2>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="font-semibold">练习题</h2>
+            <label className="flex items-center gap-2 text-sm text-zinc-500">
+              题目数量
+              <select value={quizCount} onChange={(event) => setQuizCount(Number(event.target.value))} disabled={quizGenerating || generating || quizSaving} className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1">
+                {[5, 10, 20].map((count) => <option key={count} value={count}>{count} 题</option>)}
+              </select>
+            </label>
+          </div>
 
           {/* No quiz yet — show generate button */}
           {quizQuestions.length === 0 && !quizGenerating && (
             <div className="text-center py-3">
               <p className="text-sm text-zinc-400 dark:text-zinc-500 mb-3">
-                AI 会根据本章讲解内容自动出题，检验你的理解程度
+                AI 会处理本章完整讲解，再分配练习题；题量较少时按章节顺序抽样
               </p>
               <button
                 onClick={handleGenerateQuiz}
@@ -730,6 +743,9 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
           {/* Quiz loaded */}
           {quizQuestions.length > 0 && (
             <div className="space-y-5">
+              {quizQuestions[0].source_parts_total && <p className="text-sm text-zinc-500">
+                已处理完整讲解 · 本次 {quizQuestions.length} 题覆盖 {new Set(quizQuestions.map((question) => question.source_part)).size}/{quizQuestions[0].source_parts_total} 个讲解片段
+              </p>}
               {quizQuestions.map((q, qi) => {
                 const isCorrect = quizSubmitted && userAnswers[qi] === q.answer;
                 const isWrong = quizSubmitted && userAnswers[qi] !== undefined && userAnswers[qi] !== q.answer;
@@ -741,6 +757,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
 
                 return (
                   <div key={qi} className={`border ${borderColor} rounded-lg p-4`}>
+                    {q.source_part && <p className="text-xs text-zinc-500 mb-2">来源：讲解片段 {q.source_part}/{q.source_parts_total}</p>}
                     <div className="font-medium mb-3 text-sm [&_p]:inline">
                       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                         {fixMathDelimiters(`${qi + 1}. ${q.question}`)}
@@ -879,6 +896,9 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
           {/* Graph visualization */}
           {graphData && !graphGenerating && (
             <>
+              {graphData.coverage && <p className="text-sm text-zinc-500 mb-3">
+                已处理完整讲解 · {graphData.coverage.parts} 个片段 · {graphData.coverage.source_characters} 字符 · {graphData.nodes.length} 个概念
+              </p>}
               {/* Legend */}
               <div className="flex flex-wrap gap-3 mb-3 text-xs">
                 {[
@@ -959,7 +979,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
                   onNodeClick={(n: unknown) => {
                     const node = n as KnowledgeGraphNode;
                     if (node.id && node.label) {
-                      setSelectedNode({ id: node.id, label: node.label, category: node.category || "definition" });
+                      setSelectedNode({ id: node.id, label: node.label, category: node.category || "definition", source_parts: node.source_parts });
                     }
                   }}
                   onBackgroundClick={() => setSelectedNode(null)}
@@ -993,6 +1013,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="font-medium text-sm">{selectedNode.label}</span>
+                        {selectedNode.source_parts && <span className="text-xs text-zinc-500">讲解片段 {selectedNode.source_parts.join("、")}</span>}
                         <span className="ml-2 text-xs text-zinc-400 dark:text-zinc-500">
                           {categoryLabel[selectedNode.category] || selectedNode.category}
                         </span>

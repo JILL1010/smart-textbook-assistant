@@ -39,6 +39,7 @@ export default function ReviewsPage({ params }: { params: Promise<{ id: string }
       {loading ? <p>正在加载…</p> : items.length === 0 ? <p>暂无错题，完成章节练习后可在这里复习。</p> : <div className="space-y-4">{items.map((item) => (
         <article key={item.id} className="border border-zinc-300 dark:border-zinc-700 rounded-xl p-5">
           <p className="text-sm text-zinc-500 mb-2">{item.chapter_title} · {item.resolved ? "已复习" : "待复习"} · 复习 {item.review_count} 次</p>
+          {item.question.source_part && <p className="text-xs text-zinc-500 mb-2">出题时来源：讲解片段 {item.question.source_part}/{item.question.source_parts_total}</p>}
           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{item.question.question}</ReactMarkdown>
           <div className="my-3 space-y-2">{item.question.options.map((option, index) => <label key={index} className="flex gap-2 items-center border border-zinc-300 dark:border-zinc-700 rounded p-2">
             <input type="radio" name={`review-${item.id}`} checked={answers[item.id] === index} onChange={() => setAnswers((previous) => ({ ...previous, [item.id]: index }))} />
