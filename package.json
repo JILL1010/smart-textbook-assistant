@@ -1,0 +1,16 @@
+{
+  "name": "smart-textbook-assistant",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "dev:api": "apps/api/.venv/Scripts/python -m uvicorn main:app --app-dir apps/api --reload --port 8081",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint",
+    "format": "pnpm --filter web format",
+    "clean": "rm -rf apps/web/.next apps/web/node_modules apps/api/__pycache__ apps/api/.venv"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9"
+  }
+}

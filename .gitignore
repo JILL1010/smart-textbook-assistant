@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+!.env.*.example
+
+# Uploads & data
+uploads/
+data/
+audio/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+.venv/
+venv/
+poetry.lock
+
+# Docker
+.docker/
+
+# Logs
+*.log
+logs/
+
+# Local tooling and generated development output
+.claude/settings.local.json
+*.tsbuildinfo
+/test_gen_output.json
+/apps/api/sub_test.pdf

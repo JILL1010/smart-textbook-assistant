@@ -1,0 +1,5 @@
+pyinstaller>=6.0
+uvicorn>=0.30
+fastapi>=0.115
+sqlalchemy>=2.0
+pydantic-settings>=2.0
