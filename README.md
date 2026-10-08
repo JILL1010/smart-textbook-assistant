@@ -62,4 +62,14 @@ pnpm build
 
 仅支持带文字的 PDF / DOCX，尚未加入 OCR。检索采用词项匹配；练习和图谱仍使用讲解前 8000 字符。真实模型生成质量和语音同步需要配置外部服务后验收。源码中的修复尚未重新打包为桌面 EXE。
 
-详见 [学习功能与验证记录](docs/learning-features.md)、[设计记录](docs/next-stage-design.md) 和 [贡献指南](AGENTS.md)。
+详见 [学习功能与验证记录](docs/learning-features.md)、[设计记录](docs/next-stage-design.md) 和 [贡献流程](CONTRIBUTING.md)。
+
+## 开源与贡献
+
+Copyright (C) 2026 JILL1010 and contributors.
+
+本项目以 **GNU Affero General Public License v3.0（AGPL-3.0-only）** 发布，完整条款见 [LICENSE](LICENSE)。允许按许可证条款使用、修改和再分发，包括商业使用；再分发和修改版本的网络服务需遵守对应源码提供等要求。项目不提供任何担保。
+
+PDF 解析依赖 PyMuPDF，其开源版本采用 AGPLv3；上游另提供商业授权，见 [PyMuPDF 授权说明](https://pymupdf.io/licensing)。第三方依赖保留各自的许可证；分发桌面包时也须保留其许可与版权声明。
+
+欢迎通过 [Issues](https://github.com/JILL1010/smart-textbook-assistant/issues) 报告问题，或提交 Pull Request。贡献步骤和验证要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，代码组织约定见 [AGENTS.md](AGENTS.md)。教材文件、个人学习数据和 API 密钥不包含在开源仓库中。

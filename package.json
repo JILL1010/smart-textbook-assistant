@@ -1,5 +1,6 @@
 {
   "name": "smart-textbook-assistant",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "dev": "pnpm --filter web dev",
