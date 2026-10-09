@@ -302,6 +302,16 @@ coll = COLLECT(
         for name in (".env.example", "LICENSE", "README.md", "CONTRIBUTING.md"):
             shutil.copy2(ROOT / name, output / name)
         shutil.copy2(DESKTOP_DIR / "START_HERE.md", output / "START_HERE.md")
+        try:
+            revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
+            dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True))
+        except (OSError, subprocess.CalledProcessError):
+            revision, dirty = None, None
+        manifest = {"built_at": datetime.now(timezone.utc).isoformat(), "source_commit": revision,
+                    "source_dirty": dirty, "source_repository": "https://github.com/JILL1010/smart-textbook-assistant",
+                    "python_version": sys.version.split()[0],
+                    "node_version": subprocess.check_output([str(node_exe), "--version"], text=True).strip()}
+        (output / "BUILD_INFO.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         notices = output / "licenses"
         notices.mkdir(exist_ok=True)
         for distribution in distributions():
