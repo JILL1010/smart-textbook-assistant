@@ -72,7 +72,7 @@ apps/api/.venv/Scripts/python apps/desktop/build.py
 
 仅支持带文字的 PDF / DOCX，尚未加入 OCR。检索采用词项匹配；练习题量较少时，处理完整讲解后按顺序抽样，并显示实际片段覆盖比例。图谱按相同名称和类别合并节点，尚未做语义消歧。模型输出仍需核对，语音同步尚需真实听音验收。后台任务要求单进程运行，详见 [任务行为与恢复](docs/background-tasks.md)。
 
-详见 [学习功能与验证记录](docs/learning-features.md)、[设计记录](docs/next-stage-design.md) 和 [贡献流程](CONTRIBUTING.md)。
+详见 [学习功能与验证记录](docs/learning-features.md)、[真实模型质量验收](docs/model-quality-evaluation.md)、[设计记录](docs/next-stage-design.md) 和 [贡献流程](CONTRIBUTING.md)。
 
 ## 开源与贡献
 

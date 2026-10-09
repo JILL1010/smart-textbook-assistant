@@ -32,7 +32,11 @@ def parse_document(filepath: str, filename: str, db: Session, title: str | None 
 # ─── PDF parsing ──────────────────────────────────────────────────────────────
 
 def _parse_pdf(filepath: str, textbook_id: int, db: Session):
-    with fitz.open(filepath) as doc:
+    # A failed native file open can retain a Windows handle until traceback GC.
+    # Own and close the Python file before calling the native parser.
+    with open(filepath, "rb") as source:
+        data = source.read()
+    with fitz.open(stream=data, filetype="pdf") as doc:
         toc = doc.get_toc()
         if toc and len(toc) > 0:
             _parse_from_toc(doc, toc, textbook_id, db)

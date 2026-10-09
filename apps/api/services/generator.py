@@ -4,6 +4,11 @@ from datetime import datetime, timezone
 from config import settings
 
 
+def model_options() -> dict:
+    # Opt in only: compatible providers differ in supported reasoning controls.
+    return {"reasoning_effort": settings.llm_reasoning_effort} if settings.llm_reasoning_effort else {}
+
+
 def get_client() -> OpenAI | None:
     """Get OpenAI client if configured, otherwise None."""
     api_key = settings.llm_api_key
@@ -107,6 +112,7 @@ def _generate_chapter_part(
             ],
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
+            **model_options(),
         )
         if getattr(response.choices[0], "finish_reason", None) == "length":
             raise RuntimeError("模型输出达到长度上限，本次讲解未保存，请调整输出设置后重试")
@@ -258,6 +264,7 @@ def _generate_quiz_part(chapter_title: str, chapter_text: str, difficulty: str, 
             ],
             temperature=0.3,
             max_tokens=4096,
+            **model_options(),
         )
         if getattr(response.choices[0], "finish_reason", None) == "length":
             raise RuntimeError("模型题目输出达到长度上限，本次练习未保存")
@@ -401,6 +408,7 @@ def _generate_graph_part(chapter_title: str, chapter_text: str) -> dict:
             ],
             temperature=0.3,
             max_tokens=4096,
+            **model_options(),
         )
         if getattr(response.choices[0], "finish_reason", None) == "length":
             raise RuntimeError("模型图谱输出达到长度上限，本次图谱未保存")

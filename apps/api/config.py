@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from typing import Literal
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_timeout_seconds: float = 90
+    llm_reasoning_effort: Literal["", "none", "low", "medium", "high", "max"] = ""
 
     # Generation defaults
     default_difficulty: str = "medium"

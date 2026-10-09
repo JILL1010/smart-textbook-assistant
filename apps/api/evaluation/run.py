@@ -42,6 +42,8 @@ init_db()
 if not settings.llm_api_key or "your-key" in settings.llm_api_key:
     parser.error("Configure a real LLM_API_KEY before live evaluation")
 record = {"created_at": datetime.now(timezone.utc).isoformat(), "model": settings.llm_model,
+          "settings": {"max_tokens": settings.llm_max_tokens, "timeout_seconds": settings.llm_timeout_seconds,
+                       "reasoning_effort": settings.llm_reasoning_effort or "provider_default"},
           "chapter_id": args.chapter_id, "questions": [], "lectures": [], "quiz": None,
           "manual_review": "pending; keyword hits do not measure answer correctness"}
 
@@ -61,7 +63,8 @@ with SessionLocal() as db:
         try:
             result.update(answer_with_sources(case["question"], [], evidence))
         except Exception as error:
-            result.update(status="error", error_type=type(error).__name__)
+            result.update(status="error", error_type=type(error).__name__,
+                          cause_type=type(error.__cause__).__name__ if error.__cause__ else None)
         record["questions"].append(result)
         save()
         print(case["id"], result["status"], "keyword_hit=" + str(hit), flush=True)
@@ -73,7 +76,7 @@ with SessionLocal() as db:
         try:
             result["content"] = generator.generate_chapter_content(f"教材验收节选 {number}", excerpt, "medium", "concise")
         except Exception as error:
-            result["error_type"] = type(error).__name__
+            result.update(error_type=type(error).__name__, cause_type=type(error.__cause__).__name__ if error.__cause__ else None)
         record["lectures"].append(result)
         save()
         print("lecture-excerpt", number, "ok=" + str("content" in result), flush=True)
@@ -83,7 +86,7 @@ with SessionLocal() as db:
             record["quiz"] = {"questions": generator.generate_quiz("真实教材节选验收", lecture, num_questions=10),
                               "unique_correct_answers_verified": None}
         except Exception as error:
-            record["quiz"] = {"error_type": type(error).__name__}
+            record["quiz"] = {"error_type": type(error).__name__, "cause_type": type(error.__cause__).__name__ if error.__cause__ else None}
     record["original_database_unchanged"] = before == hashlib.sha256(original.read_bytes()).hexdigest()
     save()
     print("Saved private evaluation results:", output, flush=True)
