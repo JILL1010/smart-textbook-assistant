@@ -91,6 +91,9 @@ const base = process.env.SMOKE_WEB_URL || "http://127.0.0.1:18080";
     await page.getByRole("button", { name: "重新生成", exact: true }).first().click();
     await page.getByRole("button", { name: "简洁概述", exact: true }).click();
     await page.getByRole("button", { name: "生成讲解内容", exact: true }).click();
+    await page.getByRole("region", { name: "生成任务", exact: true }).getByText(/正在处理第 1\/2 部分/).waitFor();
+    await page.reload();
+    await page.getByRole("region", { name: "生成任务", exact: true }).getByText(/讲解 · 生成中/).waitFor();
     await page.getByText("风格：concise；难度：medium", { exact: true }).first().waitFor();
     await page.getByText("整章末尾知识", { exact: true }).waitFor();
     await page.getByText(/原文 7208 字符 · 共 2 部分/).waitFor();
@@ -102,6 +105,17 @@ const base = process.env.SMOKE_WEB_URL || "http://127.0.0.1:18080";
     await page.getByText("风格：concise；难度：medium", { exact: true }).first().waitFor();
     assert(await page.getByRole("button", { name: "生成语音讲解", exact: true }).isVisible());
     console.log("PASS style selection, regeneration and persistent invalidation");
+
+    // A stopped request never publishes its partially generated replacement.
+    await page.getByRole("button", { name: "重新生成", exact: true }).first().click();
+    await page.getByRole("button", { name: "生成讲解内容", exact: true }).click();
+    await page.getByRole("button", { name: "停止任务", exact: true }).click();
+    await page.getByRole("region", { name: "生成任务", exact: true }).getByText("讲解 · 已停止", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "取消", exact: true }).click();
+    assert(await page.getByText("整章末尾知识", { exact: true }).isVisible());
+    await page.getByRole("button", { name: "从头重试讲解", exact: true }).click();
+    await page.getByRole("region", { name: "生成任务", exact: true }).locator('li').first().getByText("讲解 · 已完成", { exact: true }).waitFor();
+    console.log("PASS task progress restoration, cancellation and retry");
 
     await page.getByLabel("题目数量").selectOption("10");
     await page.getByRole("button", { name: "生成练习题", exact: true }).click();

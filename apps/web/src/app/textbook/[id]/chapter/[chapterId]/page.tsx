@@ -9,7 +9,8 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import StudyPanel from "@/components/StudyPanel";
-import { API_BASE, getChapter, getTextbook, getSubtitles, getLearning, saveQuizDraft, submitQuiz, generateContent, generateTTS, askQuestion, generateQuiz, generateKnowledgeGraph, type GenerationMetadata, type Citation, type ChatMessage, type Subtitle, type QuizQuestion, type KnowledgeGraphNode, type KnowledgeGraphData } from "@/lib/api";
+import GenerationTasks, { useGenerationTasks } from "@/components/GenerationTasks";
+import { API_BASE, getChapter, getTextbook, getSubtitles, getLearning, saveQuizDraft, submitQuiz, generateTTS, askQuestion, type GenerationTask, type GenerationMetadata, type Citation, type ChatMessage, type Subtitle, type QuizQuestion, type KnowledgeGraphNode, type KnowledgeGraphData } from "@/lib/api";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
@@ -105,7 +106,6 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
   const [chapters, setChapters] = useState<{ id: number; title: string; order: number; generated_content: string | null }[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [difficulty, setDifficulty] = useState("medium");
   const [style, setStyle] = useState("teacher");
   const [showOriginal, setShowOriginal] = useState(false);
@@ -121,7 +121,6 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
   // Quiz state
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [quizCount, setQuizCount] = useState(5);
-  const [quizGenerating, setQuizGenerating] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState<{ correct: number; total: number } | null>(null);
@@ -134,7 +133,6 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
 
   // Knowledge graph state
   const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null);
-  const [graphGenerating, setGraphGenerating] = useState(false);
   const [selectedNode, setSelectedNode] = useState<KnowledgeGraphNode | null>(null);
   const [isDark, setIsDark] = useState(false);
   const graphContainerRef = useRef<HTMLDivElement>(null);
@@ -144,22 +142,58 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
     links: graphData.edges.map((edge) => ({ ...edge })),
   } : { nodes: [], links: [] }, [graphData]);
 
-  useEffect(() => {
-    const container = graphContainerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setGraphWidth(Math.max(1, entry.contentRect.width));
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [graphData, graphGenerating]);
-
   // Q&A state — loaded from localStorage via useEffect to avoid hydration mismatch
   const [chat, setChat] = useState<ChatEntry[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const taskCompleted = useCallback(async (task: GenerationTask | null) => {
+    const ch = await getChapter(textbookId, cid);
+    setChapter(ch);
+    setChapters((previous) => previous.map((item) => item.id === cid ? { ...item, generated_content: ch.generated_content } : item));
+    if (!task || task.kind === "lecture" || task.kind === "quiz") {
+      const learning = await getLearning(textbookId, cid);
+      const questions: QuizQuestion[] = ch.quiz_data ? JSON.parse(ch.quiz_data) : [];
+      setQuizQuestions(questions);
+      if ([5, 10, 20].includes(questions.length)) setQuizCount(questions.length);
+      setQuizToken(ch.quiz_token || "");
+      setUserAnswers(learning.draft ? learning.draft.answers : learning.current_attempt ? Object.fromEntries(learning.current_attempt.answers.map((answer, index) => [index, answer])) : {});
+      setQuizSubmitted(!learning.draft && !!learning.current_attempt);
+      setQuizScore(learning.current_attempt && !learning.draft ? { correct: learning.current_attempt.correct, total: learning.current_attempt.total } : null);
+      setDraftStatus("");
+      setLearningRefresh((value) => value + 1);
+    }
+    if (!task || task.kind === "lecture" || task.kind === "graph") {
+      setGraphData(ch.knowledge_graph_data ? JSON.parse(ch.knowledge_graph_data) : null);
+      setSelectedNode(null);
+    }
+    if (!task || task.kind === "lecture") {
+      audioRef.current?.pause();
+      setSubtitles(ch.audio_filename ? await getSubtitles(ch.audio_filename) : []);
+      setActiveSub(-1);
+      if (ch.generation_metadata) { setDifficulty(ch.generation_metadata.difficulty); setStyle(ch.generation_metadata.style); }
+    }
+    if (task?.kind === "lecture") {
+      setShowOriginal(false);
+      setShowGenerationOptions(false);
+      setNotice("讲解已更新，请基于新讲解重新生成语音、练习题和知识图谱。");
+    }
+  }, [textbookId, cid]);
+  const generationTasks = useGenerationTasks(textbookId, cid, !loading, taskCompleted);
+  const taskBusy = !generationTasks.ready || !!generationTasks.current || !!generationTasks.submitting;
+  const generating = generationTasks.current?.kind === "lecture" || generationTasks.submitting === "lecture";
+  const quizGenerating = generationTasks.current?.kind === "quiz" || generationTasks.submitting === "quiz";
+  const graphGenerating = generationTasks.current?.kind === "graph" || generationTasks.submitting === "graph";
+
+  useEffect(() => {
+    const container = graphContainerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(([entry]) => setGraphWidth(Math.max(1, entry.contentRect.width)));
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [graphData, graphGenerating]);
 
   // Load chapter data + textbook chapters for sidebar
   useEffect(() => {
@@ -254,38 +288,9 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
   }, [textbookId, cid]);
 
   async function handleGenerate() {
-    setGenerating(true);
     setError(null);
     setNotice(null);
-    try {
-      const result = await generateContent(textbookId, cid, difficulty, style);
-      setChapter((prev) =>
-        prev ? {
-          ...prev, generated_content: result.generated_content, generation_metadata: result.generation_metadata,
-          audio_filename: null, quiz_data: null, knowledge_graph_data: null,
-        } : prev
-      );
-      audioRef.current?.pause();
-      setSubtitles([]);
-      setActiveSub(-1);
-      setQuizQuestions([]);
-      setQuizToken("");
-      setDraftStatus("");
-      setUserAnswers({});
-      setQuizSubmitted(false);
-      setQuizScore(null);
-      setGraphData(null);
-      setSelectedNode(null);
-      setLearningRefresh((value) => value + 1);
-      setChapters((prev) => prev.map((ch) => ch.id === cid ? { ...ch, generated_content: result.generated_content } : ch));
-      setShowOriginal(false);
-      setShowGenerationOptions(false);
-      setNotice("讲解已更新，请基于新讲解重新生成语音、练习题和知识图谱。");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "生成失败");
-    } finally {
-      setGenerating(false);
-    }
+    await generationTasks.start("lecture", { difficulty, style, num_questions: quizCount });
   }
 
   async function handleGenerateTTS() {
@@ -330,37 +335,14 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
   }
 
   async function handleGenerateQuiz() {
-    setQuizGenerating(true);
     setError(null);
-    try {
-      const result = await generateQuiz(textbookId, cid, quizCount, difficulty, style);
-      setQuizQuestions(result.quiz);
-      setQuizToken(result.quiz_token);
-      setUserAnswers({});
-      setQuizSubmitted(false);
-      setQuizScore(null);
-      setChapter((prev) => prev ? { ...prev, quiz_data: JSON.stringify(result.quiz) } : prev);
-      setLearningRefresh((value) => value + 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "生成练习题失败");
-    } finally {
-      setQuizGenerating(false);
-    }
+    await generationTasks.start("quiz", { difficulty, style, num_questions: quizCount });
   }
 
   async function handleGenerateGraph() {
-    setGraphGenerating(true);
     setError(null);
     setSelectedNode(null);
-    try {
-      const result = await generateKnowledgeGraph(textbookId, cid);
-      setGraphData(result.data);
-      setChapter((prev) => prev ? { ...prev, knowledge_graph_data: JSON.stringify(result.data) } : prev);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "生成知识图谱失败");
-    } finally {
-      setGraphGenerating(false);
-    }
+    await generationTasks.start("graph", { difficulty, style, num_questions: quizCount });
   }
 
   async function handleSubmitQuiz() {
@@ -508,6 +490,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
         <p role="status" className="mb-4 text-sm text-blue-600 dark:text-blue-400">{notice}</p>
       )}
       <StudyPanel textbookId={textbookId} chapterId={cid} refresh={learningRefresh} />
+      <GenerationTasks controller={generationTasks} />
 
       {hasGenerated && !showGenerationOptions ? (
         /* Generated explanation */
@@ -552,7 +535,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
               </button>
               <button
                 onClick={() => setShowGenerationOptions(true)}
-                disabled={ttsGenerating || quizGenerating || graphGenerating || quizSaving}
+                disabled={taskBusy || ttsGenerating || quizSaving}
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40"
               >
                 重新生成
@@ -624,7 +607,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
 
             <button
               onClick={handleGenerate}
-              disabled={generating || ttsGenerating || quizGenerating || graphGenerating || quizSaving}
+              disabled={taskBusy || ttsGenerating || quizSaving}
               className="bg-blue-600 text-white px-8 py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
             >
               {generating ? "AI 正在生成讲解..." : "生成讲解内容"}
@@ -711,7 +694,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
             <h2 className="font-semibold">练习题</h2>
             <label className="flex items-center gap-2 text-sm text-zinc-500">
               题目数量
-              <select value={quizCount} onChange={(event) => setQuizCount(Number(event.target.value))} disabled={quizGenerating || generating || quizSaving} className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1">
+              <select value={quizCount} onChange={(event) => setQuizCount(Number(event.target.value))} disabled={taskBusy || quizSaving} className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1">
                 {[5, 10, 20].map((count) => <option key={count} value={count}>{count} 题</option>)}
               </select>
             </label>
@@ -725,7 +708,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
               </p>
               <button
                 onClick={handleGenerateQuiz}
-                disabled={generating}
+                disabled={taskBusy}
                 className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium text-sm"
               >
                 生成练习题
@@ -785,7 +768,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
                               name={`quiz-q-${qi}`}
                               checked={isSelected}
                               onChange={() => !quizSubmitted && setUserAnswers((prev) => ({ ...prev, [qi]: oi }))}
-                              disabled={quizSubmitted || quizSaving}
+                              disabled={quizSubmitted || quizSaving || quizGenerating || generating || !generationTasks.ready}
                               className="w-4 h-4 accent-blue-600"
                             />
                             <span className="flex-1 [&_p]:inline">
@@ -822,7 +805,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
                 {!quizSubmitted ? (
                   <button
                     onClick={handleSubmitQuiz}
-                    disabled={quizSaving || !quizToken || Object.keys(userAnswers).length < quizQuestions.length}
+                    disabled={quizSaving || quizGenerating || generating || !generationTasks.ready || !quizToken || Object.keys(userAnswers).length < quizQuestions.length}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors text-sm font-medium"
                   >
                     {quizSaving ? "保存成绩中…" : `提交 (${Object.keys(userAnswers).length}/${quizQuestions.length})`}
@@ -842,7 +825,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
                 )}
                 <button
                   onClick={handleGenerateQuiz}
-                  disabled={quizGenerating || generating || quizSaving}
+                  disabled={taskBusy || quizSaving}
                   className="text-sm text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-md px-3 py-1.5 ml-auto transition-colors"
                 >
                   重新生成
@@ -862,7 +845,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
             {graphData && (
               <button
                 onClick={handleGenerateGraph}
-                disabled={graphGenerating || generating}
+                disabled={taskBusy}
                 className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-md px-2 py-1 transition-colors"
               >
                 重新生成
@@ -878,7 +861,7 @@ function ChapterContent({ textbookId, cid }: { textbookId: number; cid: number }
               </p>
               <button
                 onClick={handleGenerateGraph}
-                disabled={generating}
+                disabled={taskBusy}
                 className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium text-sm"
               >
                 生成知识图谱

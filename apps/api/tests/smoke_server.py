@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 parser = argparse.ArgumentParser()
@@ -58,6 +59,7 @@ with tempfile.TemporaryDirectory() as folder:
         session.commit()
 
     def explain(title, text, difficulty, style):
+        time.sleep(2)
         tail = "\n\n整章末尾知识" if "整章末尾知识" in text else ""
         return f"## 新讲解\n\n风格：{style}；难度：{difficulty}\n\n" + "示例内容。" * 900 + tail
 

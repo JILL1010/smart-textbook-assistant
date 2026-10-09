@@ -23,6 +23,7 @@ def init_db():
     from models.textbook import Textbook  # noqa: F401
     from models.chapter import Chapter  # noqa: F401
     from models.learning import StudyProgress, QuizAttempt, ReviewItem  # noqa: F401
+    from models.generation_task import GenerationTask  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

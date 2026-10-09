@@ -1,6 +1,35 @@
 // Browser requests share the frontend origin; the server chooses the API port.
 export const API_BASE = "";
 
+export interface GenerationTask {
+  id: string;
+  chapter_id: number;
+  kind: "lecture" | "quiz" | "graph";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
+  revision: number;
+  parameters: { difficulty: string; style: string; num_questions: number };
+  completed_parts: number;
+  total_parts: number;
+  cancel_requested: boolean;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+const tasksPath = (book: number, chapter: number) => `/api/textbooks/${book}/chapters/${chapter}/tasks`;
+export function listGenerationTasks(book: number, chapter: number) {
+  return request<GenerationTask[]>(tasksPath(book, chapter));
+}
+export function startGenerationTask(book: number, chapter: number, kind: GenerationTask["kind"], parameters: { difficulty: string; style: string; num_questions: number }) {
+  return request<GenerationTask>(tasksPath(book, chapter), { method: "POST", body: JSON.stringify({ kind, ...parameters }) });
+}
+export function cancelGenerationTask(book: number, chapter: number, id: string) {
+  return request<GenerationTask>(`${tasksPath(book, chapter)}/${id}/cancel`, { method: "POST", body: "{}" });
+}
+export function retryGenerationTask(book: number, chapter: number, id: string) {
+  return request<GenerationTask>(`${tasksPath(book, chapter)}/${id}/retry`, { method: "POST", body: "{}" });
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },

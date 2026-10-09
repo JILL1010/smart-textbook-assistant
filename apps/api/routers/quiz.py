@@ -10,6 +10,7 @@ from models.chapter import Chapter
 from services.generator import generate_quiz
 from services.artifacts import save_artifact
 from services.learning import quiz_token
+from services.tasks import ensure_no_active_task
 
 router = APIRouter()
 
@@ -34,6 +35,7 @@ def generate_quiz_endpoint(
     )
     if not chapter:
         raise HTTPException(404, "章节不存在")
+    ensure_no_active_task(db, chapter.id)
 
     if not chapter.generated_content:
         raise HTTPException(400, "请先生成章节讲解内容")

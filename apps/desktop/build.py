@@ -10,6 +10,10 @@ import subprocess
 import tempfile
 import urllib.request
 import zipfile
+import argparse
+import re
+from datetime import datetime, timezone
+from importlib.metadata import distributions
 from pathlib import Path
 
 
@@ -22,6 +26,15 @@ DIST_DIR = ROOT / "dist"
 # https://nodejs.org/dist
 NODE_VERSION = "v24.13.0"
 NODE_URL = f"https://nodejs.org/dist/{NODE_VERSION}/node-{NODE_VERSION}-win-x64.zip"
+
+
+def remove_build_directory(path: Path) -> None:
+    target = path.resolve()
+    allowed = (ROOT / "dist").resolve()
+    if target == allowed or not target.is_relative_to(allowed):
+        raise RuntimeError(f"Build cleanup outside dist refused: {target}")
+    if path.exists():
+        shutil.rmtree(path)
 
 
 def run(cmd: list[str], cwd: Path | None = None, **kwargs) -> None:
@@ -86,22 +99,19 @@ def step_download_node() -> Path:
 
 
 def step_materialize_standalone(standalone_src: Path, dest: Path) -> None:
-    """Copy standalone directory and create real node_modules via npm install."""
+    """Materialize the traced, locked dependencies without requiring another install."""
     if dest.exists():
-        shutil.rmtree(dest)
+        remove_build_directory(dest)
 
-    # Copy everything EXCEPT node_modules (will reinstall with npm)
-    def _ignore_node_modules(src_dir: str, names: list[str]) -> set[str]:
+    def _ignore_private_files(src_dir: str, names: list[str]) -> set[str]:
         ignored = set()
         for name in names:
-            if name == "node_modules":
-                ignored.add(name)
-            elif name in ("__pycache__", ".git", ".cache"):
+            if name in ("__pycache__", ".git", ".cache") or name.startswith(".env"):
                 ignored.add(name)
         return ignored
 
-    print("  Copying standalone (excluding node_modules)...")
-    shutil.copytree(standalone_src, dest, symlinks=True, ignore=_ignore_node_modules)
+    print("  Copying standalone and materializing traced dependency links...")
+    shutil.copytree(standalone_src, dest, symlinks=False, ignore=_ignore_private_files)
 
     # Verify server.js exists
     web_dir = dest / "apps" / "web"
@@ -115,7 +125,7 @@ def step_materialize_standalone(standalone_src: Path, dest: Path) -> None:
     static_dst = web_dir / ".next" / "static"
     if static_src.exists():
         if static_dst.exists():
-            shutil.rmtree(static_dst)
+            remove_build_directory(static_dst)
         shutil.copytree(static_src, static_dst)
         print(f"  Copied .next/static → {static_dst}")
     else:
@@ -126,14 +136,11 @@ def step_materialize_standalone(standalone_src: Path, dest: Path) -> None:
     public_dst = web_dir / "public"
     if public_src.exists() and any(public_src.iterdir()):
         if public_dst.exists():
-            shutil.rmtree(public_dst)
+            remove_build_directory(public_dst)
         shutil.copytree(public_src, public_dst)
         print(f"  Copied public/ → {public_dst}")
 
-    # Run npm install to get real node_modules (no symlinks)
-    print("  Installing production dependencies with npm...")
-    run_shell("npm install --omit=dev --legacy-peer-deps --no-optional", cwd=web_dir)
-    print("  Dependencies installed.")
+    print("  Traced dependencies copied without links or a fresh install.")
 
 
 def step_pyinstaller(node_exe: Path) -> None:
@@ -141,16 +148,17 @@ def step_pyinstaller(node_exe: Path) -> None:
     print("\n[3/4] Materializing standalone for packaging...")
 
     standalone_src = WEB_DIR / ".next" / "standalone"
-    bundle = Path(tempfile.gettempdir()) / "textbook-assistant-bundle"
+    bundle = DIST_DIR / ".build-stage"
+    bundle.mkdir(parents=True, exist_ok=True)
     step_materialize_standalone(standalone_src, bundle / "standalone")
 
     # Copy API code
     api_dst = bundle / "api"
     print(f"  Copying API → {api_dst}")
     if api_dst.exists():
-        shutil.rmtree(api_dst)
+        remove_build_directory(api_dst)
     shutil.copytree(API_DIR, api_dst, ignore=shutil.ignore_patterns(
-        "__pycache__", ".venv", "data", "uploads", ".env", ".git"
+        "__pycache__", ".venv", "data", "uploads", ".env*", ".git", "tests", "*.pdf"
     ))
 
     # Copy Node.js portable
@@ -171,10 +179,9 @@ def step_pyinstaller(node_exe: Path) -> None:
     output_dir = DIST_DIR / "智能课本助手"
     if output_dir.exists():
         print(f"  Cleaning previous build: {output_dir}")
-        subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(output_dir)],
-                       check=False, timeout=30)
-        if output_dir.exists():
-            print(f"  WARNING: Could not fully clean {output_dir}, continuing anyway")
+        if (output_dir / "data").exists() or (output_dir / ".env").exists():
+            raise RuntimeError("Output contains user data; choose a new --output-dir")
+        remove_build_directory(output_dir)
 
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 import sys
@@ -207,7 +214,7 @@ pyz = PYZ(a.pure)
 # Filter out large user data from EXE PKG (keep stdlib data like encodings).
 # These user data files are still included in COLLECT below → _internal/.
 _user_data_dests = {{"standalone", "api", "node.exe"}}
-_exe_datas = [t for t in a.datas if t[0] not in _user_data_dests]
+_exe_datas = [t for t in a.datas if t[0].replace("\\\\", "/").split("/", 1)[0] not in _user_data_dests]
 
 exe = EXE(
     pyz,
@@ -266,14 +273,26 @@ coll = COLLECT(
                 print(f"  Removed duplicate: {node_dup}")
             except PermissionError:
                 print(f"  WARNING: Cannot remove {node_dup} — permission denied (harmless, but wastes 86MB)")
-        # Copy .env to output root so API config can be loaded at runtime
-        env_src = API_DIR / ".env"
-        env_dst = output / ".env"
-        if env_src.exists():
-            shutil.copy2(env_src, env_dst)
-            print(f"  .env → {env_dst}")
-        else:
-            print(f"  WARNING: .env not found at {env_src}, API key will not be configured")
+        for name in (".env.example", "LICENSE", "README.md", "CONTRIBUTING.md"):
+            shutil.copy2(ROOT / name, output / name)
+        notices = output / "licenses"
+        notices.mkdir(exist_ok=True)
+        for distribution in distributions():
+            for file in distribution.files or []:
+                if any(marker in file.name.lower() for marker in ("license", "copying", "notice")) and ".dist-info" in str(file):
+                    source = Path(distribution.locate_file(file))
+                    if source.is_file():
+                        target = notices / distribution.metadata["Name"] / str(file).split(".dist-info/", 1)[-1]
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, target)
+        for source, name in [(node_exe.parent / "LICENSE", "node.txt"), (Path(sys.base_prefix) / "LICENSE.txt", "python.txt")]:
+            if source.is_file():
+                shutil.copy2(source, notices / name)
+        if not (notices / "node.txt").exists():
+            version = subprocess.check_output([str(node_exe), "--version"], text=True).strip()
+            if not re.fullmatch(r"v\d+\.\d+\.\d+", version):
+                raise RuntimeError("Cannot determine the bundled Node.js license version")
+            urllib.request.urlretrieve(f"https://raw.githubusercontent.com/nodejs/node/{version}/LICENSE", notices / "node.txt")
 
         print(f"\n  Output: {output}")
         exe = output / "智能课本助手.exe"
@@ -284,12 +303,24 @@ coll = COLLECT(
 
 
 def main() -> None:
+    global DIST_DIR
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-frontend", action="store_true")
+    parser.add_argument("--node-path", type=Path)
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "dist" / "releases" / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
+    args = parser.parse_args()
+    DIST_DIR = args.output_dir.resolve()
+    if not DIST_DIR.is_relative_to((ROOT / "dist").resolve()) or DIST_DIR == (ROOT / "dist").resolve():
+        parser.error("--output-dir must be a subdirectory of this project's dist/")
     print("=" * 50)
     print("  智能课本助手 — Desktop Build")
     print("=" * 50)
 
-    step_build_frontend()
-    node_exe = step_download_node()
+    if not args.skip_frontend:
+        step_build_frontend()
+    node_exe = args.node_path.resolve() if args.node_path else step_download_node()
+    if not node_exe.is_file():
+        parser.error("Node executable does not exist")
     step_pyinstaller(node_exe)
 
     print("\n" + "=" * 50)

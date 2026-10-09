@@ -7,6 +7,7 @@ from db import get_db
 from models.chapter import Chapter
 from services.generator import generate_knowledge_graph
 from services.artifacts import save_artifact
+from services.tasks import ensure_no_active_task
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ def generate_knowledge_graph_endpoint(
     )
     if not chapter:
         raise HTTPException(404, "章节不存在")
+    ensure_no_active_task(db, chapter.id)
 
     if not chapter.generated_content:
         raise HTTPException(400, "请先生成章节讲解内容")

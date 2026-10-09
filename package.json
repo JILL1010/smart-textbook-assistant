@@ -11,7 +11,7 @@
     "clean": "rm -rf apps/web/.next apps/web/node_modules apps/api/__pycache__ apps/api/.venv"
   },
   "engines": {
-    "node": ">=18",
+    "node": ">=20.9",
     "pnpm": ">=9"
   }
 }

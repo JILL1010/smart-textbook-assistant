@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
+    llm_timeout_seconds: float = 90
 
     # Generation defaults
     default_difficulty: str = "medium"

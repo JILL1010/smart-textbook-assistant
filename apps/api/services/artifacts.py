@@ -1,5 +1,6 @@
 """Persist derived content only while its source revision is still current."""
 import logging
+import json
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -32,3 +33,16 @@ def save_artifact(db: Session, chapter: Chapter, revision: int, **values) -> Non
         db.rollback()
         raise HTTPException(409, "章节讲解已更新，请根据新讲解重新生成")
     db.commit()
+
+
+def save_lecture(db: Session, chapter: Chapter, revision: int, generated: str, metadata: dict) -> None:
+    old_audio = chapter.audio_filename
+    result = db.execute(update(Chapter).where(Chapter.id == chapter.id, Chapter.generation_revision == revision).values(
+        generated_content=generated, generation_metadata=json.dumps(metadata, ensure_ascii=False),
+        generation_revision=revision + 1, audio_filename=None, quiz_data=None, knowledge_graph_data=None,
+    ).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, "章节已更新，请刷新后重新生成")
+    db.commit()
+    remove_audio(old_audio)

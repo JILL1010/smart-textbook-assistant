@@ -1,0 +1,22 @@
+[
+  {"id":"linear-en","question":"What conditions define a linear operator?","evidence_terms":["Linear operator"]},
+  {"id":"shape-en","question":"What matrix shape represents a linear operator from Rn to Rm?","evidence_terms":["m × n","m-by-n"]},
+  {"id":"transpose-en","question":"How is the transpose of a matrix defined?","evidence_terms":["Transpose"]},
+  {"id":"addition-en","question":"How is matrix addition defined entry by entry?","evidence_terms":["Addition"]},
+  {"id":"scalar-en","question":"How is scalar-matrix multiplication defined?","evidence_terms":["Scalar-matrix"]},
+  {"id":"matvec-en","question":"How is a matrix-vector product defined?","evidence_terms":["Matrix-vector"]},
+  {"id":"matmul-en","question":"What dimensions are required for matrix-matrix multiplication?","evidence_terms":["Matrix-matrix"]},
+  {"id":"flops-en","question":"How many FLOPs does the inner product of two length n vectors require?","evidence_terms":["2n −1","2n - 1"]},
+  {"id":"big-o-en","question":"What does Big-O notation mean?","evidence_terms":["Big-O"]},
+  {"id":"blocks-en","question":"What is a block matrix?","evidence_terms":["Block Matrix"]},
+  {"id":"norm-axioms-en","question":"Which axioms define a vector norm?","evidence_terms":["vector norm"]},
+  {"id":"l1-en","question":"How is the vector 1-norm defined?","evidence_terms":["1−norm","ℓ1"]},
+  {"id":"l2-en","question":"How is the vector 2-norm defined?","evidence_terms":["2−norm","ℓ2"]},
+  {"id":"linf-en","question":"How is the infinity norm of a vector defined?","evidence_terms":["∞−norm","ℓ∞"]},
+  {"id":"rayleigh-late-en","question":"Why does the Rayleigh quotient have quadratic accuracy near an eigenvector?","evidence_terms":["Quadratic Accuracy","Small-angle"]},
+  {"id":"linear-zh","question":"线性算子必须满足哪些条件？","evidence_terms":["Linear operator"]},
+  {"id":"transpose-zh","question":"矩阵转置的定义是什么？","evidence_terms":["Transpose"]},
+  {"id":"norm-zh","question":"向量范数需要满足哪三条公理？","evidence_terms":["vector norm"]},
+  {"id":"blocks-zh","question":"分块矩阵是什么？","evidence_terms":["Block Matrix"]},
+  {"id":"rayleigh-zh","question":"为什么瑞利商在特征向量附近具有二阶精度？","evidence_terms":["Quadratic Accuracy"]}
+]

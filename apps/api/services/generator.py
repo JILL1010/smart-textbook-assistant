@@ -12,6 +12,8 @@ def get_client() -> OpenAI | None:
     return OpenAI(
         api_key=api_key,
         base_url=settings.llm_base_url or "https://api.openai.com/v1",
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
     )
 
 
@@ -53,15 +55,19 @@ def generation_metadata(text: str | None, difficulty: str, style: str) -> dict:
             "created_at": datetime.now(timezone.utc).isoformat()}
 
 
-def generate_chapter_content(chapter_title: str, chapter_text: str | None = None, difficulty: str = "medium", style: str = "teacher") -> str:
+def generate_chapter_content(chapter_title: str, chapter_text: str | None = None, difficulty: str = "medium", style: str = "teacher", progress=None) -> str:
     parts = chapter_segments(chapter_text or "")
     if len(parts) > 40:
         raise RuntimeError("章节超过 40 个讲解片段，请先按小节导入；本次未生成或覆盖讲解")
     explanations = []
     for index, part in enumerate(parts, 1):
+        if progress:
+            progress(index - 1, len(parts))
         title = chapter_title if len(parts) == 1 else f"{chapter_title}（第 {index}/{len(parts)} 部分，按原文顺序）"
         explanation = _generate_chapter_part(title, part, difficulty, style)
         explanations.append(explanation if len(parts) == 1 else f"# 第 {index} 部分 / 共 {len(parts)} 部分\n\n{explanation}")
+        if progress:
+            progress(index, len(parts))
     return "\n\n---\n\n".join(explanations)
 
 
@@ -186,6 +192,7 @@ def generate_quiz(
     chapter_text: str,
     difficulty: str = "medium",
     num_questions: int = 5,
+    progress=None,
 ) -> list[dict]:
     """Process the full lecture and distribute the requested quiz across it."""
     if type(num_questions) is not int or not 1 <= num_questions <= 20:
@@ -193,12 +200,16 @@ def generate_quiz(
     parts = _artifact_parts(chapter_text)
     questions = []
     for index, part in enumerate(parts):
+        if progress:
+            progress(index, len(parts))
         count = max(1, num_questions // len(parts) + (index < num_questions % len(parts)))
         title = f"{chapter_title}（讲解片段 {index + 1}/{len(parts)}）"
         batch = _generate_quiz_part(title, part, difficulty, count)
         if len(batch) != count:
             raise RuntimeError("模型返回的题目数量与要求不符，本次练习未保存，请重试")
         questions.extend({**question, "source_part": index + 1, "source_parts_total": len(parts)} for question in batch)
+        if progress:
+            progress(index + 1, len(parts))
     if len(questions) > num_questions:
         # All parts were processed. A short quiz samples evenly, including the end.
         positions = [len(questions) // 2] if num_questions == 1 else [
@@ -335,11 +346,14 @@ KNOWLEDGE_GRAPH_PROMPT = """你是一位知识图谱构建专家，需要从章�
 def generate_knowledge_graph(
     chapter_title: str,
     chapter_text: str,
+    progress=None,
 ) -> dict:
     """Extract every lecture part and merge identical concept labels/categories."""
     parts = _artifact_parts(chapter_text)
     nodes, edges, concepts, seen_edges = [], [], {}, set()
     for index, part in enumerate(parts, 1):
+        if progress:
+            progress(index - 1, len(parts))
         graph = _generate_graph_part(f"{chapter_title}（讲解片段 {index}/{len(parts)}）", part)
         mapping = {}
         for node in graph["nodes"]:
@@ -359,6 +373,8 @@ def generate_knowledge_graph(
             if source != target and key not in seen_edges:
                 edges.append({**edge, "source": source, "target": target})
                 seen_edges.add(key)
+        if progress:
+            progress(index, len(parts))
     return {"nodes": nodes, "edges": edges, "coverage": {"source_characters": len(chapter_text), "parts": len(parts)}}
 
 

@@ -9,6 +9,7 @@
 - 同一本教材的全文片段检索，优先当前章；回答区分教材依据与补充说明，可查看引用原文和文件位置。
 - 语音讲解、字幕、覆盖完整讲解的选择题生成和交互式知识图谱；题目与概念显示来源片段。
 - 持久化已读标记、作答草稿、成绩快照、错题和复习记录。
+- 讲解、练习和图谱的后台任务：分段进度、刷新恢复、停止和从头重试。
 - Next.js 同源 API 代理，以及 Windows 桌面启动器源码。
 
 ## 技术栈与目录
@@ -56,11 +57,20 @@ pnpm --filter web exec tsc --noEmit --incremental false
 pnpm build
 ```
 
-测试使用临时存储和模拟外部服务。浏览器检查方法见 [可靠性验证](docs/reliability-checks.md)。生产前端构建为 Next.js standalone；Windows 桌面打包入口为 `apps/desktop/build.py`。
+测试使用临时存储和模拟外部服务。GitHub Actions 在 push / PR 时运行后端测试、代理测试、lint、类型检查和生产构建。浏览器检查方法见 [可靠性验证](docs/reliability-checks.md)。生产前端构建为 Next.js standalone。
+
+Windows 桌面打包（安装 `pyinstaller` 后）：
+
+```powershell
+apps/api/.venv/Scripts/python -m pip install pyinstaller
+apps/api/.venv/Scripts/python apps/desktop/build.py
+```
+
+默认输出到新的 `dist/releases/<时间>/智能课本助手/`，不覆盖旧发行目录。包包含配置示例和许可证，不包含个人 `.env` 或教材。运行前在 EXE 旁复制 `.env.example` 为 `.env` 并填写配置。可用 `--skip-frontend --node-path 'C:/Program Files/nodejs/node.exe'` 复用已构建的前端与本机 Node。
 
 ## 当前边界
 
-仅支持带文字的 PDF / DOCX，尚未加入 OCR。检索采用词项匹配；练习题量较少时，处理完整讲解后按顺序抽样，并显示实际片段覆盖比例。图谱按相同名称和类别合并节点，尚未做语义消歧。真实模型生成质量和语音同步需要配置外部服务后验收。源码中的修复尚未重新打包为桌面 EXE。
+仅支持带文字的 PDF / DOCX，尚未加入 OCR。检索采用词项匹配；练习题量较少时，处理完整讲解后按顺序抽样，并显示实际片段覆盖比例。图谱按相同名称和类别合并节点，尚未做语义消歧。模型输出仍需核对，语音同步尚需真实听音验收。后台任务要求单进程运行，详见 [任务行为与恢复](docs/background-tasks.md)。
 
 详见 [学习功能与验证记录](docs/learning-features.md)、[设计记录](docs/next-stage-design.md) 和 [贡献流程](CONTRIBUTING.md)。
 

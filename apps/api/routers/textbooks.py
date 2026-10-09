@@ -11,6 +11,7 @@ from models.textbook import Textbook
 from models.chapter import Chapter
 from services.artifacts import remove_audio
 from models.learning import StudyProgress, QuizAttempt, ReviewItem
+from models.generation_task import GenerationTask
 
 router = APIRouter()
 
@@ -93,7 +94,7 @@ def delete_textbook(textbook_id: int, db: Session = Depends(get_db)):
         remove_audio(filename)
 
     chapter_ids = [ch.id for ch in chapters]
-    for model in (StudyProgress, QuizAttempt, ReviewItem):
+    for model in (StudyProgress, QuizAttempt, ReviewItem, GenerationTask):
         db.query(model).filter(model.chapter_id.in_(chapter_ids)).delete(synchronize_session=False)
     db.query(Chapter).filter(Chapter.textbook_id == textbook_id).delete()
     db.delete(tb)
