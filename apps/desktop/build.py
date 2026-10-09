@@ -12,6 +12,7 @@ import urllib.request
 import zipfile
 import argparse
 import re
+import json
 from datetime import datetime, timezone
 from importlib.metadata import distributions
 from pathlib import Path
@@ -120,6 +121,36 @@ def step_materialize_standalone(standalone_src: Path, dest: Path) -> None:
         print(f"  ERROR: server.js not found after copy at {server_js}")
         sys.exit(1)
 
+    # Dereferencing pnpm junctions moves a package away from the virtual-store
+    # siblings that supplied its dependencies. Expose the traced packages by name.
+    store = dest / "node_modules" / ".pnpm"
+    manifests = list(store.glob("*/node_modules/*/package.json")) + list(store.glob("*/node_modules/@*/*/package.json"))
+    versions = {}
+    for manifest in manifests:
+        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        name, version = metadata["name"], metadata["version"]
+        if not re.fullmatch(r"(?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+", name):
+            raise RuntimeError(f"Invalid traced package name: {name}")
+        if name in versions and versions[name] != version:
+            raise RuntimeError(f"Multiple traced versions of {name}; cannot flatten safely")
+        versions[name] = version
+        target = web_dir / "node_modules" / name
+        if target.exists():
+            existing = json.loads((target / "package.json").read_text(encoding="utf-8"))
+            if existing.get("version") != version:
+                raise RuntimeError(f"Traced dependency version conflict: {name}")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        installed = ROOT / manifest.parent.relative_to(dest)
+        source = installed if (installed / "package.json").is_file() else manifest.parent
+        installed_metadata = json.loads((source / "package.json").read_text(encoding="utf-8"))
+        if (installed_metadata.get("name"), installed_metadata.get("version")) != (name, version):
+            raise RuntimeError(f"Installed dependency differs from traced build: {name}")
+        # Full matching packages retain their licenses as well as runtime files.
+        shutil.copytree(source, target, symlinks=False, ignore=_ignore_private_files)
+    if store.exists():
+        remove_build_directory(store)
+
     # Copy .next/static (CSS/JS/assets) — not included in standalone output by default
     static_src = WEB_DIR / ".next" / "static"
     static_dst = web_dir / ".next" / "static"
@@ -191,9 +222,7 @@ a = Analysis(
     pathex=[r"{bundle / 'api'}"],
     binaries=[],
     datas=[
-        (r"{bundle / 'standalone'}", "standalone"),
         (r"{bundle / 'api'}", "api"),
-        (r"{bundle / 'node.exe'}", "node.exe"),
     ],
     hiddenimports=["uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto",
                    "uvicorn.protocols", "uvicorn.protocols.http", "uvicorn.protocols.http.auto",
@@ -211,17 +240,11 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# Filter out large user data from EXE PKG (keep stdlib data like encodings).
-# These user data files are still included in COLLECT below → _internal/.
-_user_data_dests = {{"standalone", "api", "node.exe"}}
-_exe_datas = [t for t in a.datas if t[0].replace("\\\\", "/").split("/", 1)[0] not in _user_data_dests]
-
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    _exe_datas,
     [],
+    exclude_binaries=True,
     name="智能课本助手",
     debug=False,
     bootloader_ignore_signals=False,
@@ -260,6 +283,9 @@ coll = COLLECT(
 
     output = DIST_DIR / "智能课本助手"
     if output.exists():
+        # Node owns these resources, including its native addons. Keep them opaque
+        # to PyInstaller's Python binary classification and dependency analysis.
+        shutil.copytree(bundle / "standalone", output / "_internal" / "standalone")
         # Copy node.exe to output root so launcher can use it without PyInstaller temp dir
         node_dst = output / "node.exe"
         if not node_dst.exists():
@@ -275,6 +301,7 @@ coll = COLLECT(
                 print(f"  WARNING: Cannot remove {node_dup} — permission denied (harmless, but wastes 86MB)")
         for name in (".env.example", "LICENSE", "README.md", "CONTRIBUTING.md"):
             shutil.copy2(ROOT / name, output / name)
+        shutil.copy2(DESKTOP_DIR / "START_HERE.md", output / "START_HERE.md")
         notices = output / "licenses"
         notices.mkdir(exist_ok=True)
         for distribution in distributions():
